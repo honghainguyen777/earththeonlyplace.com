@@ -1,24 +1,8 @@
 import os
 import requests
-import urllib.parse
 
 from flask import redirect, render_template, request, session
 from functools import wraps
-
-
-def apology(message, code=400):
-    """Render message as an apology to user."""
-    def escape(s):
-        """
-        Escape special characters.
-
-        https://github.com/jacebrowning/memegen#special-characters
-        """
-        for old, new in [("-", "--"), (" ", "-"), ("_", "__"), ("?", "~q"),
-                         ("%", "~p"), ("#", "~h"), ("/", "~s"), ("\"", "''")]:
-            s = s.replace(old, new)
-        return s
-    return render_template("apology.html", top=code, bottom=escape(message)), code
 
 
 def login_required(f):
@@ -35,29 +19,29 @@ def login_required(f):
     return decorated_function
 
 
-def lookup(symbol):
-    """Look up quote for symbol."""
-
-    # Contact API
-    try:
-        api_key = os.environ.get("API_KEY")
-        response = requests.get(f"https://cloud-sse.iexapis.com/stable/stock/{urllib.parse.quote_plus(symbol)}/quote?token={api_key}")
-        response.raise_for_status()
-    except requests.RequestException:
-        return None
-
-    # Parse response
-    try:
-        quote = response.json()
-        return {
-            "name": quote["companyName"],
-            "price": float(quote["latestPrice"]),
-            "symbol": quote["symbol"]
-        }
-    except (KeyError, TypeError, ValueError):
-        return None
-
-
 def usd(value):
     """Format value as USD."""
     return f"${value:,.2f}"
+
+def card_check(card):
+    length = len(card)
+    # sum degits
+    sum_other = 0
+    sum_those = 0
+    for i in range(length - 2, -1, -2):
+        temp = 2 * int(card[i])
+        sum_other += temp // 10 + temp % 10
+    for i in range(length - 1, -1, -2):
+        sum_those += int(card[i])
+    add_sum = sum_those + sum_other
+    # check if sum%10 = 0?
+    if (add_sum % 10) != 0:
+        return False
+    else:
+        # take 2 first number
+        start_nums = int(card[0]) * 10 + int(card[1])
+        # check if the card is a real card with 13 or 15 or 16 numbers and start with valid digits
+        if (length == 15 and (start_nums == 34 or start_nums == 37)) or (length == 16 and (start_nums >= 51 and start_nums <= 55)) or ((length == 13 or length == 16) and start_nums >= 40 and start_nums < 50):
+            return True
+        else:
+            return False

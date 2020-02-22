@@ -6,7 +6,7 @@
 
 {% block main %}
     {% if admin == 1 %}
-    <h2 class="section-heading">Distribution (Admin mode)</h2>
+    <h4 class="section-heading">Distribution (Admin mode)</h4>
     <form class="needs-validation" novalidate action="/distribution" method="post">
         <div class="form-group">
           <div class="col-md-12 mb-3">
@@ -17,15 +17,27 @@
             </div>
           </div>
           <div class="col-md-12 mb-3">
-            <label class="col-md-12" for="validationCustom02"><b>Oganization</b></label>
-            <input name="oganization" type="text" class="form-control" id="validationCustom02" placeholder="Oganization name" required>
+            <label class="col-md-12" for="validationCustom02"><b>organization</b></label>
+            <input name="organization" type="text" class="form-control" id="validationCustom02" placeholder="organization name" required>
             <div class="valid-feedback">
               Looks good!
             </div>
           </div>
           <div class="col-md-12 mb-3">
-            <label class="col-md-12" for="validationCustom03"><b>Note</b></label>
-            <textarea name="note" type="text" class="form-control" id="validationCustom03" placeholder="Note" rows="5" max="250" required></textarea>
+            <label class="col-md-12" for="validationCustom03"><b>Category</b></label>
+            <select autofocus class="form-control" name="category" id="validationCustom03" required>
+                <option value="" selected disabled>Category</option>
+                <option value="Environment">Environment</option>
+                <option value="Animals">Animals</option>
+                <option value="People">People</option>
+            </select>
+            <div class="valid-feedback">
+              Looks good!
+            </div>
+          </div>
+          <div class="col-md-12 mb-3">
+            <label class="col-md-12" for="validationCustom04"><b>Note</b></label>
+            <textarea name="note" type="text" class="form-control" id="validationCustom04" placeholder="Note" rows="5" max="250" required></textarea>
             <div class="valid-feedback">
               Looks good!
             </div>
@@ -47,14 +59,14 @@
     {% endif %}
 
 
-    <h2 class="section-heading" style="margin-top: 50px">Distribution of our oganization</h2>
-    <p>Here you can where your donations go</p>
+    <h4 class="section-heading" style="margin-top: 50px">Distribution of our organization</h4>
+    <p><i>Here you can where your donations go</i></p>
     <table class="table table-striped">
       <thead>
         <tr>
           <th style="width: 8%">No.</td>
           <th style="width: 15%">Amount</td>
-          <th style="width: 20%">Oganization</td>
+          <th style="width: 20%">organization</td>
           <th style="width: 37%">Remark</td>
           <th style="width: 20%">Date</td>
         </tr>
@@ -64,34 +76,12 @@
         <tr>
           <td>{{ dis["No"] }}</td>
           <td>{{ dis["amount"] }}</td>
-          <td>{{ dis["oganization"] }}</td>
+          <td>{{ dis["organization"] }}</td>
           <td>{{ dis["note"] }}</td>
           <td>{{ dis["date"] }}</td>
         </tr>
         {% endfor %}
       </tbody>
     </table>
-
-    <script>
-    // TODO: check also for the validifcation if we have enough money
-    // Example starter JavaScript for disabling form submissions if there are invalid fields
-    (function() {
-      'use strict';
-      window.addEventListener('load', function() {
-        // Fetch all the forms we want to apply custom Bootstrap validation styles to
-        var forms = document.getElementsByClassName('needs-validation');
-        // Loop over them and prevent submission
-        var validation = Array.prototype.filter.call(forms, function(form) {
-          form.addEventListener('submit', function(event) {
-            if (form.checkValidity() === false) {
-              event.preventDefault();
-              event.stopPropagation();
-            }
-            form.classList.add('was-validated');
-          }, false);
-        });
-      }, false);
-    })();
-    </script>
 
 {% endblock %}

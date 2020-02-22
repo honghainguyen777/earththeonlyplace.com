@@ -8,7 +8,7 @@ from werkzeug.exceptions import default_exceptions, HTTPException, InternalServe
 from werkzeug.security import check_password_hash, generate_password_hash
 from datetime import datetime
 
-from helpers import apology, login_required, lookup, usd
+from helpers import login_required, usd, card_check
 
 # Configure application
 app = Flask(__name__)
@@ -51,8 +51,12 @@ def index():
     people = db.execute("SELECT * FROM galeries WHERE category = :category", category = "People")
     collection = [environment, animals, people]
     category = ["Environment", "Animals", "People"]
+    indexContent = db.execute("SELECT content FROM indexContent")
+    content = []
+    for cont in indexContent:
+        content.append(cont["content"])
 
-    return render_template("index.html", collection=collection, category=category)
+    return render_template("index.html", collection=collection, category=category, content=content)
 
 
 @app.route("/register", methods=["GET", "POST"])
@@ -65,21 +69,15 @@ def register():
         password = request.form.get("password")
         confirmation = request.form.get("confirmation")
 
-        # check if user type correctly
-        if not username:
-            return apology("You must provide an username!", 403)
-        elif not password:
-            return apology("You must provide a password!", 403)
-        elif not confirmation:
-            return apology("Password does not match!", 403)
-
         # check if the password and its confirmation are matched
-        elif password != confirmation:
-            return apology("Password does not match!", 403)
+        if password != confirmation:
+            flash("Password does not match!")
+            return render_template("register.html")
 
         # check if the username exists in the database
         elif db.execute("SELECT username FROM users WHERE username = :username", username = username):
-            return apology("Username has already existed!", 403)
+            flash("Username has already existed!")
+            return render_template("register.html")
 
         # hash the password and insert the registration to the users database
         hashed_password = generate_password_hash(password)
@@ -103,21 +101,15 @@ def login():
     # User reached route via POST (as by submitting a form via POST)
     if request.method == "POST":
 
-        # Ensure username was submitted
-        if not request.form.get("username"):
-            return apology("must provide username", 403)
-
-        # Ensure password was submitted
-        elif not request.form.get("password"):
-            return apology("must provide password", 403)
-
         # Query database for username
+        username = request.form.get("username").lower()
         rows = db.execute("SELECT * FROM users WHERE username = :username",
-                          username=request.form.get("username"))
+                          username=username)
 
         # Ensure username exists and password is correct
         if len(rows) != 1 or not check_password_hash(rows[0]["hash"], request.form.get("password")):
-            return apology("invalid username and/or password", 403)
+            flash("invalid username and/or password")
+            return render_template("login.html")
 
         # Remember which user has logged in
         session["user_id"] = rows[0]["id"]
@@ -154,11 +146,12 @@ def distribution():
     if request.method == "POST" and int(user_id) < 0:
         admin = 1
         amount = request.form.get("amount")
-        oganization = request.form.get("oganization")
+        organization = request.form.get("organization")
         note = request.form.get("note")
         new_total = total - int(amount)
-        db.execute("INSERT INTO distribution (amount, oganization, note) VALUES(?, ?, ?)", int(amount), oganization, note)
-        db.execute("INSERT INTO donations (user_id, amount, note) VALUES(-1, ?, ?)", -int(amount), note)
+        category = request.form.get("category")
+        db.execute("INSERT INTO distribution (amount, organization, note) VALUES(?, ?, ?)", int(amount), organization, note)
+        db.execute("INSERT INTO donations (user_id, username, amount, category, note) VALUES(-1, 'admin', ?, ?, ?)", -int(amount), category, note)
 
         return render_template("distribution.html", distribution=distribution, admin=admin, total=new_total)
 
@@ -171,47 +164,65 @@ def distribution():
         return render_template("distribution.html", distribution=distribution, admin=admin, total=total)
 
 
-@app.route("/history")
+@app.route("/all_donations")
+def all_donations():
+    """Show history of user's donations and solutions"""
+    donations = db.execute("SELECT * FROM donations WHERE amount > 0")
+    return render_template("all_donations.html", donations=donations)
+
+
+@app.route("/all_solutions", methods=["GET", "POST"])
+def all_solutions():
+    """Show history of user's donations and solutions"""
+    solutions = db.execute("SELECT * FROM solutions")
+    return render_template("all_solutions.html", solutions=solutions)
+
+
+@app.route("/your_contribution")
 @login_required
-def history():
-    """Show history of transactions"""
+def your_contribution():
     user_id = session["user_id"]
-
-    # query for transaction history from database
-    trans_data = db.execute("SELECT * FROM transactions WHERE user_id = :user_id", user_id = user_id)
-
-    # go to every transaction and change the total and price to usd format
-    for transaction in trans_data:
-        transaction["total"] = usd(transaction["total"])
-        transaction["price"] = usd(transaction["price"])
-    return render_template("history.html", storages = trans_data)
+    donations = db.execute("SELECT * FROM donations WHERE user_id=:user_id AND amount > 0", user_id = user_id)
+    solutions = db.execute("SELECT * FROM solutions WHERE user_id=:user_id", user_id = user_id)
+    return render_template("your_contribution.html", donations=donations, solutions=solutions)
 
 
-@app.route("/quote", methods=["GET", "POST"])
+@app.route("/donate", methods=["GET", "POST"])
 @login_required
-def quote():
+def donate():
+    user_id = session["user_id"]
+    if request.method == "POST":
+        # check credit card validation
+        card = str(request.form.get("card"))
+        amount = float(request.form.get("amount"))
+        category = request.form.get("category")
+        note = request.form.get("note")
 
-    # render the quote.html when the method is GET
-    if request.method == "GET":
-        return render_template("quote.html")
+        # check the number of card digits and the validation of the card/card prividers
+        if card_check(card):
+            username = db.execute("SELECT username FROM users WHERE id =:id", id=user_id)
+            db.execute("INSERT INTO donations (user_id, username, amount, category, note) VALUES(?, ?, ?, ?, ?)", user_id, username[0]["username"], amount, category, note)
+            flash("Thank you very much for your lifesaving work")
+        else:
+            flash("Invalid credit card!")
+        return redirect("/all_donations")
     else:
-        symbol = request.form.get("symbol")
+        return render_template("donate_contribute.html")
 
-        # render an apology if the symbol is missing
-        if not request.form.get("symbol"):
-            return apology("Missing symbol!", 403)
 
-        # lookup for the information of the stock symbol
-        lookup_info = lookup(symbol)
-
-        # ensure the symbol exists
-        if not lookup_info:
-            return apology("Invalid symbol!", 403)
-
-        # lookup for the current price
-        lookup_info["price"] = usd(lookup_info["price"])
-        return render_template("quoted.html", stock = lookup_info)
-
+@app.route("/contribute", methods=["GET", "POST"])
+@login_required
+def contribute():
+    user_id = session["user_id"]
+    if request.method == "POST":
+        username = db.execute("SELECT username FROM users WHERE id=:id", id = user_id)
+        solution = request.form.get("solution")
+        category = request.form.get("category")
+        db.execute("INSERT INTO solutions (user_id, username, solution, category) VALUES(?, ?, ?, ?)", user_id, username[0]["username"], solution, category)
+        flash("Thank you very much for your lifesaving contribution")
+        return redirect("/all_solutions")
+    else:
+        return render_template("donate_contribute.html")
 
 
 @app.route("/account", methods=["GET", "POST"])
@@ -226,176 +237,23 @@ def account():
         new_password = request.form.get("new_password")
         confirmation = request.form.get("confirmation")
 
-        # check if user inputted correctly
-        if not current_password:
-            return apology("Missing password", 403)
-        elif not new_password:
-            return apology("Enter your new password")
-        elif not confirmation or new_password != confirmation:
-            return apology("Password does not match", 403)
+        if new_password != confirmation:
+            flash("Password does not match")
+            return render_template("account.html")
 
         # query for user information
         user = db.execute("SELECT * FROM users WHERE id = :user_id", user_id = user_id)
 
         # compare the current password hashes
         if not check_password_hash(user[0]["hash"], current_password):
-            return apology("Wrong current password", 403)
+            flash("Password does not match")
+            return render_template("Wrong current password!")
         else:
             # hash the new password and update the database
             hash = generate_password_hash(new_password)
             db.execute("UPDATE users SET hash = :hash WHERE id = :user_id", hash=hash, user_id=user_id)
-        flash("Password has been changed!")
-        return redirect("/logout")
+            flash("Password has been changed!")
+            return redirect("/logout")
     else:
         return render_template("account.html")
 
-
-@app.route("/sell", methods=["GET", "POST"])
-@login_required
-def sell():
-    """Sell shares of stock"""
-    if request.method == "POST":
-        user_id = session["user_id"]
-
-        # get the inputs from user
-        symbol = request.form.get("symbol")
-        sell_shares = int(request.form.get("shares"))
-
-        # check if the user typed correctly
-        if not symbol:
-            return apology("Please enter your stock symbol", 403)
-        elif not current_shares:
-            return apology("You don't have enough.", 403)
-
-        # lookup for the current info of the stock symbol and query the total shares the user has
-        lookup_info = lookup(symbol)
-        shares_info = db.execute("SELECT SUM(shares) as shares_sum FROM transactions WHERE user_id = :user_id\
-                                AND symbol = :symbol", user_id = user_id, symbol = symbol)
-        current_shares = shares_info[0]["shares_sum"]
-
-        # check if the current shares is smaller than the shares user wants to sell
-        if current_shares < sell_shares:
-            return apology("You don't have enough.", 403)
-
-        # get current price of the stock
-        current_price = lookup_info["price"]
-
-        # check user's balance
-        balance = db.execute("SELECT cash FROM users WHERE id=:user_id", user_id = user_id)[0]["cash"]
-
-        # calculate the sell amount
-        sell = current_price * float(sell_shares)
-
-        # update the total cash
-        new_balance = balance + sell
-        db.execute("UPDATE users SET cash=:cash WHERE id = :user_id", cash = new_balance, user_id = user_id)
-
-        # insert the transaction detail to history
-        db.execute("INSERT INTO transactions (user_id, stock_name, symbol, price, shares, total, date) VALUES(?, ?, ?, ?, ?, ?, ?)",
-                    user_id, lookup_info["name"], lookup_info["symbol"],
-                    lookup_info["price"], int(-sell_shares), sell, datetime.now())
-        flash("Sold!")
-        return redirect("/")
-    else:
-        return render_template("sell.html")
-
-
-@app.route("/balance", methods=["GET", "POST"])
-@login_required
-def balance():
-    """Change balance"""
-    user_id = session["user_id"]
-
-    # query the user's hashed password
-    hashPw = db.execute("SELECT hash FROM users WHERE id = :user_id",
-                        user_id=user_id)
-    if request.method == "POST":
-
-        # get cash information
-        cash_info = db.execute("SELECT cash FROM users WHERE id = :user_id",
-                               user_id=user_id)
-
-        # check if user typed correctly all fields in the form
-        if not request.form.get("card"):
-            return apology("Missing card", 403)
-        elif not request.form.get("ccv"):
-            return apology("Missing CCV code", 403)
-        elif not request.form.get("cash"):
-            return apology("Amout of cash", 403)
-        elif not check_password_hash(hashPw[0]["hash"], request.form.get("currentPassword")):
-            return apology("Wrong current password!", 403)
-        else:
-            # check credit card validation
-            card = str(request.form.get("card"))
-            length = len(card)
-            cash = float(request.form.get("cash"))
-
-            # take the 2 first number of the card
-            start_nums = int(card[0]) * 10 + int(card[1])
-
-            # check the number of card digits and the validation of the card/card prividers
-            if (length == 15 and (start_nums == 34 or start_nums == 37))\
-                    or (length == 16 and (start_nums >= 51 and start_nums <= 55))\
-                    or ((length == 13 or length == 16) and start_nums >= 40 and start_nums < 50):
-
-                # if the payment method is deposit
-                if request.form.get("method") == "deposit":
-                    # update new balance
-                    newBalance = cash + cash_info[0]["cash"]
-                    db.execute("UPDATE users SET cash = :cash WHERE id = :user_id",
-                               cash=newBalance, user_id=user_id)
-
-                    # save the transactions to the cash_trans
-                    db.execute("INSERT INTO cash_trans (user_id, cash_change, card, ccv, date) VALUES(?, ?, ?, ?, ?)",
-                               user_id, cash, int(card), int(request.form.get("ccv")), datetime.now())
-                    flash("Deposited")
-                    return redirect("/")
-
-                # if the user wants to withdraw
-                elif request.form.get("method") == "withdraw":
-                    if cash > cash_info[0]["cash"]:
-                        return apology("Can't afford!", 400)
-                    else:
-                        # update new balance
-                        newBalance = cash_info[0]["cash"] - cash
-                        db.execute("UPDATE users SET cash = :cash WHERE id = :user_id",
-                                   cash=newBalance, user_id=user_id)
-
-                        # save the trans history
-                        db.execute("INSERT INTO cash_trans (user_id, cash_change, card, ccv, date) VALUES(?, ?, ?, ?, ?)",
-                                   user_id, -cash, int(card), int(request.form.get("ccv")), datetime.now())
-                        flash("Withdrawn")
-                        return redirect("/")
-                else:
-                    return apology("Missing method")
-            # else the card is not valid
-            else:
-                return apology("Invalid card", 400)
-    else:
-        return render_template("balance.html")
-
-
-@app.route("/wdhistory")
-@login_required
-def wdhistory():
-    """History of cash transfers"""
-
-    user_id = session["user_id"]
-
-    # get the withdraw and deposit history from the database
-    info = db.execute("SELECT * FROM cash_trans WHERE user_id = :user_id", user_id=user_id)
-    for transfer in info:
-        transfer["cash_change"] = usd(transfer["cash_change"])
-    return render_template("wdhistory.html", info=info)
-
-
-def errorhandler(e):
-    """Handle error"""
-    if not isinstance(e, HTTPException):
-        e = InternalServerError()
-    return apology(e.name, e.code)
-
-
-# Listen for errors
-for code in default_exceptions:
-    app.errorhandler(code)(errorhandler)
